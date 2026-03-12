@@ -1,0 +1,7 @@
+{
+  "name": "Remix: InjuryIQ",
+  "description": "AI-driven Safety Utility platform protecting youth athletes from overuse injuries through real-time monitoring and coaching prescriptions.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
