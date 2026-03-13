@@ -26,6 +26,19 @@
 }
 
 .glass-card {
-  @apply bg-white/80 backdrop-blur-md border border-white/20 shadow-sm;
+  @apply bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-white/20 dark:border-white/5 shadow-xl;
+}
+
+.lab-grid {
+  background-image: radial-gradient(circle at 2px 2px, rgba(0, 212, 170, 0.05) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
+.scan-line {
+  background: linear-gradient(to bottom, transparent, var(--color-accent), transparent);
+}
+
+.skeleton {
+  @apply bg-slate-200 dark:bg-slate-800 animate-pulse rounded-lg;
 }
 

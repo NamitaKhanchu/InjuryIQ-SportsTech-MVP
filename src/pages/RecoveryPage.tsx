@@ -11,10 +11,23 @@ import { useSearchParams } from 'react-router-dom';
 export function RecoveryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeView = (searchParams.get('view') as 'ROADMAP' | 'HUB') || 'ROADMAP';
+  const highlightedSessionId = searchParams.get('highlight');
   
   const setActiveView = (view: 'ROADMAP' | 'HUB') => {
     setSearchParams({ view });
   };
+
+  // Clear highlight after some time
+  React.useEffect(() => {
+    if (highlightedSessionId) {
+      const timer = setTimeout(() => {
+        const newParams = new URLSearchParams(searchParams);
+        newParams.delete('highlight');
+        setSearchParams(newParams);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [highlightedSessionId, searchParams, setSearchParams]);
 
   const [activeFilter, setActiveFilter] = React.useState<'ALL' | 'RED' | 'YELLOW' | 'GREEN'>('ALL');
   const [searchQuery, setSearchQuery] = React.useState('');
@@ -520,7 +533,12 @@ export function RecoveryPage() {
                   <motion.div 
                     key={session.id}
                     whileHover={{ y: -8 }}
-                    className="group bg-white dark:bg-[#0F172A] rounded-3xl overflow-hidden shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col transition-colors duration-300"
+                    className={cn(
+                      "group bg-white dark:bg-[#0F172A] rounded-3xl overflow-hidden shadow-sm border transition-all duration-500 flex flex-col",
+                      highlightedSessionId === session.id 
+                        ? "border-accent shadow-[0_0_30px_rgba(0,255,157,0.2)] scale-[1.02] ring-2 ring-accent/20" 
+                        : "border-slate-200 dark:border-slate-800"
+                    )}
                   >
                     <div className="relative h-48 bg-slate-100 dark:bg-slate-900 overflow-hidden transition-colors">
                       <img 

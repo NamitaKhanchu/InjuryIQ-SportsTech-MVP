@@ -54,3 +54,19 @@ export interface RecoveryRoadmap {
   currentProgress: number;
   goals: RecoveryGoal[];
 }
+
+export type StrainLevel = 'low' | 'medium' | 'high';
+
+export interface StrainMap {
+  [key: string]: StrainLevel;
+}
+
+export interface AiAssessment {
+  strains: StrainMap;
+  summary: string;
+  mitigations: {
+    area: string;
+    action: string;
+    sessionId: string;
+  }[];
+}
