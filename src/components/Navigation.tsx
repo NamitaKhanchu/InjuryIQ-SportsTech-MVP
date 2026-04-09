@@ -8,7 +8,6 @@ const navItems = [
   { icon: Home, label: 'Dashboard', path: '/' },
   { icon: Users, label: 'Roster', path: '/roster' },
   { icon: Activity, label: 'Analysis', path: '/analysis' },
-  { icon: MessageSquare, label: 'Team Hub', path: '/team' },
 ];
 
 export function Sidebar() {

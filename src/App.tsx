@@ -5,7 +5,6 @@ import { Header } from './components/Header';
 import { DashboardPage } from './pages/DashboardPage';
 import { RosterPage } from './pages/RosterPage';
 import { AnalysisPage } from './pages/AnalysisPage';
-import { CommunicationPage } from './pages/CommunicationPage';
 import { RecoveryPage } from './pages/RecoveryPage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
@@ -50,7 +49,6 @@ export default function App() {
               <Route path="/" element={<DashboardPage />} />
               <Route path="/roster" element={<RosterPage />} />
               <Route path="/analysis" element={<AnalysisPage />} />
-              <Route path="/team" element={<CommunicationPage />} />
               <Route path="/recovery" element={<RecoveryPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

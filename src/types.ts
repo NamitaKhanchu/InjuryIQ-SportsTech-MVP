@@ -1,13 +1,10 @@
 export type AthleteStatus = 'SAFE' | 'CAUTION' | 'OVERLOAD_RISK';
-export type ConsentStatus = 'VERIFIED' | 'ACTION_REQUIRED';
-
 export interface Athlete {
   id: string;
   name: string;
   position: string;
   age: number;
   status: AthleteStatus;
-  consent: ConsentStatus;
   hrv: number;
   hrvTrend: number[];
   load: number;

@@ -1,11 +1,13 @@
 import React from 'react';
 import { motion } from 'motion/react';
+import { useNavigate } from 'react-router-dom';
 import { Activity, Heart, RefreshCw, Zap, Info, TrendingUp, TrendingDown, AlertCircle, Shield, Users, ChevronRight } from 'lucide-react';
 import { MOCK_ATHLETES } from '../constants';
 import { cn } from '../lib/utils';
 import { LineChart, Line, ResponsiveContainer, YAxis, BarChart, Bar, Cell } from 'recharts';
 
 export function DashboardPage() {
+  const navigate = useNavigate();
   const redFlagAthletes = MOCK_ATHLETES.filter(a => a.status === 'OVERLOAD_RISK');
   const cautionAthletes = MOCK_ATHLETES.filter(a => a.status === 'CAUTION');
   const safeAthletes = MOCK_ATHLETES.filter(a => a.status === 'SAFE');
@@ -97,7 +99,11 @@ export function DashboardPage() {
           <div className="space-y-4">
             {redFlagAthletes.length > 0 ? (
               redFlagAthletes.map(athlete => (
-                <div key={athlete.id} className="group p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-status-red/50 transition-all cursor-pointer">
+                <div 
+                  key={athlete.id} 
+                  onClick={() => navigate(`/analysis?athleteId=${athlete.id}&autoScan=true`)}
+                  className="group p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-status-red/50 transition-all cursor-pointer"
+                >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-status-red/10 flex items-center justify-center font-black text-status-red">
@@ -131,10 +137,6 @@ export function DashboardPage() {
               </div>
             )}
           </div>
-
-          <button className="w-full py-4 bg-primary dark:bg-slate-800 text-white font-black rounded-2xl text-xs uppercase tracking-widest hover:bg-primary/90 transition-all">
-            View All Alerts
-          </button>
         </motion.div>
       </div>
 
