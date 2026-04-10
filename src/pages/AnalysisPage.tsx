@@ -401,7 +401,7 @@ export function AnalysisPage() {
                       <div className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-4 transition-colors">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">AI Summary</span>
-                          <div className="px-2 py-0.5 bg-accent/10 rounded text-[8px] font-black text-accent uppercase">Gemini 3.1 Flash</div>
+                          <div className="px-2 py-0.5 bg-accent/10 rounded text-[8px] font-black text-accent uppercase">Gemini 2.0 Flash</div>
                         </div>
                         <p className="text-primary dark:text-white font-bold text-lg leading-snug transition-colors">
                           {assessment.summary}

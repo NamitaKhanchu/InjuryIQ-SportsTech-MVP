@@ -42,51 +42,68 @@ export function AnatomicalModel({ view, strainData, className, onPartClick, sele
     return 'fill-white/26 stroke-white/35 stroke-[2.25]';
   };
 
-  // Tapered, smoother regions for a more “clinical” look.
-  // NOTE: These regions are intentionally approximate; we apply a per-view calibration transform
-  // so they line up with the chosen anatomy images.
-  const CAL =
-    view === 'FRONT'
-      ? { scale: 1.0, dx: 0, dy: 0 }
-      : { scale: 1.0, dx: 0, dy: 0 };
-  const cx = 100;
-  const cy = 225;
-  const overlayTransform = `translate(${CAL.dx} ${CAL.dy}) translate(${cx} ${cy}) scale(${CAL.scale}) translate(${-cx} ${-cy})`;
+  const resolvedBackdropUrl = backdropUrl || (view === 'FRONT' ? '/anatomy-front.png' : '/anatomy-back.png');
 
-  const parts =
+  // Use the image's native pixel coordinates as the overlay coordinate system.
+  // This guarantees that highlights line up with the actual image, even with letterboxing.
+  const IMG = view === 'FRONT' ? { w: 400, h: 624 } : { w: 408, h: 612 };
+
+  type Pt = { x: number; y: number };
+  type Part = { id: string; d: string; label: string };
+
+  const frame =
+    view === 'FRONT'
+      ? { x: 77, y: 38, w: 246, h: 563 } // tuned for anatomy-front.png (400x624)
+      : { x: 75, y: 42, w: 257, h: 538 }; // tuned for anatomy-back.png (408x612)
+
+  const p = (nx: number, ny: number): Pt => ({
+    x: frame.x + nx * frame.w,
+    y: frame.y + ny * frame.h,
+  });
+
+  const poly = (pts: Pt[]) =>
+    `M ${pts[0].x} ${pts[0].y} ` + pts.slice(1).map((q) => `L ${q.x} ${q.y}`).join(' ') + ' Z';
+
+  const ellipse = (c: Pt, rx: number, ry: number) =>
+    `M ${c.x - rx} ${c.y} a ${rx} ${ry} 0 1 0 ${rx * 2} 0 a ${rx} ${ry} 0 1 0 ${-rx * 2} 0`;
+
+  const parts: Part[] =
     view === 'FRONT'
       ? [
-          { id: 'head', d: 'M100 28c-13 0-23 10-23 23s10 23 23 23 23-10 23-23-10-23-23-23Z', label: 'Head' },
-          { id: 'neck', d: 'M87 76c0-6 5-11 11-11h4c6 0 11 5 11 11v12H87V76Z', label: 'Neck' },
-          { id: 'chest', d: 'M66 96c10-10 22-16 34-16s24 6 34 16l10 42c-20 11-44 11-88 0l10-42Z', label: 'Chest' },
-          { id: 'abs', d: 'M78 142c7 3 15 5 22 5s15-2 22-5l8 62c-9 7-19 11-30 11s-21-4-30-11l8-62Z', label: 'Abs' },
-          { id: 'shoulder_l', d: 'M72 114c0-12 10-22 22-22 6 0 11 2 15 6-4 12-15 21-28 21-3 0-6-1-9-2Z', label: 'Left Shoulder' },
-          { id: 'shoulder_r', d: 'M128 114c0-12-10-22-22-22-6 0-11 2-15 6 4 12 15 21 28 21 3 0 6-1 9-2Z', label: 'Right Shoulder' },
-          { id: 'arm_l', d: 'M46 132c0-12 7-22 17-27l10 10c-7 6-11 15-11 25v92c0 10 4 19 11 25l-10 10c-10-5-17-15-17-27V132Z', label: 'Left Arm' },
-          { id: 'arm_r', d: 'M154 132c0-12-7-22-17-27l-10 10c7 6 11 15 11 25v92c0 10-4 19-11 25l10 10c10-5 17-15 17-27V132Z', label: 'Right Arm' },
-          { id: 'quad_l', d: 'M83 230c-12 5-20 16-23 32l-6 58c8 9 17 14 28 14 9 0 18-3 26-9l7-62c2-15-3-27-14-33H83Z', label: 'Left Quad' },
-          { id: 'quad_r', d: 'M117 230c12 5 20 16 23 32l6 58c-8 9-17 14-28 14-9 0-18-3-26-9l-7-62c-2-15 3-27 14-33h18Z', label: 'Right Quad' },
-          { id: 'calf_l', d: 'M66 360c7 6 15 9 24 9s17-3 24-9l-7 70c-4 10-10 15-17 15H90c-7 0-13-5-17-15l-7-70Z', label: 'Left Calf' },
-          { id: 'calf_r', d: 'M110 360c7 6 15 9 24 9s17-3 24-9l-7 70c-4 10-10 15-17 15h-4c-7 0-13-5-17-15l-7-70Z', label: 'Right Calf' },
+          { id: 'head', label: 'Head', d: ellipse(p(0.5, 0.055), frame.w * 0.085, frame.h * 0.055) },
+          { id: 'neck', label: 'Neck', d: poly([p(0.47, 0.115), p(0.53, 0.115), p(0.54, 0.155), p(0.46, 0.155)]) },
+          { id: 'chest', label: 'Chest', d: poly([p(0.34, 0.17), p(0.66, 0.17), p(0.72, 0.30), p(0.28, 0.30)]) },
+          { id: 'abs', label: 'Abs', d: poly([p(0.38, 0.30), p(0.62, 0.30), p(0.66, 0.42), p(0.34, 0.42)]) },
+          { id: 'shoulder_l', label: 'Left Shoulder', d: ellipse(p(0.38, 0.19), frame.w * 0.08, frame.h * 0.05) },
+          { id: 'shoulder_r', label: 'Right Shoulder', d: ellipse(p(0.62, 0.19), frame.w * 0.08, frame.h * 0.05) },
+          // Quads / hamstrings / calves
+          { id: 'quad_l', label: 'Left Quad', d: poly([p(0.38, 0.46), p(0.455, 0.46), p(0.47, 0.66), p(0.365, 0.66)]) },
+          { id: 'quad_r', label: 'Right Quad', d: poly([p(0.545, 0.46), p(0.62, 0.46), p(0.635, 0.66), p(0.53, 0.66)]) },
+          // Front view: map hamstrings to the same approximate thigh regions (keeps demo strain IDs usable).
+          { id: 'hamstring_l', label: 'Left Hamstring', d: poly([p(0.38, 0.48), p(0.455, 0.48), p(0.47, 0.66), p(0.365, 0.66)]) },
+          { id: 'hamstring_r', label: 'Right Hamstring', d: poly([p(0.545, 0.48), p(0.62, 0.48), p(0.635, 0.66), p(0.53, 0.66)]) },
+          { id: 'calf_l', label: 'Left Calf', d: poly([p(0.41, 0.68), p(0.455, 0.68), p(0.465, 0.92), p(0.395, 0.92)]) },
+          { id: 'calf_r', label: 'Right Calf', d: poly([p(0.545, 0.68), p(0.59, 0.68), p(0.605, 0.92), p(0.535, 0.92)]) },
         ]
       : [
-          { id: 'head', d: 'M100 28c-13 0-23 10-23 23s10 23 23 23 23-10 23-23-10-23-23-23Z', label: 'Head' },
-          { id: 'back_upper', d: 'M62 98c13-13 25-18 38-18s25 5 38 18l8 58c-17 9-32 13-46 13s-29-4-46-13l8-58Z', label: 'Upper Back' },
-          { id: 'back_lower', d: 'M76 164c7 4 15 6 24 6s17-2 24-6l10 46c-10 10-21 15-34 15s-24-5-34-15l10-46Z', label: 'Lower Back' },
-          { id: 'shoulder_l', d: 'M72 114c0-12 10-22 22-22 6 0 11 2 15 6-4 12-15 21-28 21-3 0-6-1-9-2Z', label: 'Left Shoulder' },
-          { id: 'shoulder_r', d: 'M128 114c0-12-10-22-22-22-6 0-11 2-15 6 4 12 15 21 28 21 3 0 6-1 9-2Z', label: 'Right Shoulder' },
-          { id: 'hamstring_l', d: 'M78 274c-10 6-18 16-22 29l-6 52c8 8 18 12 30 12 10 0 19-3 27-9l6-55c1-13-4-24-15-29H78Z', label: 'Left Hamstring' },
-          { id: 'hamstring_r', d: 'M122 274c10 6 18 16 22 29l6 52c-8 8-18 12-30 12-10 0-19-3-27-9l-6-55c-1-13 4-24 15-29h20Z', label: 'Right Hamstring' },
-          { id: 'calf_l', d: 'M66 360c7 6 15 9 24 9s17-3 24-9l-7 70c-4 10-10 15-17 15H90c-7 0-13-5-17-15l-7-70Z', label: 'Left Calf' },
-          { id: 'calf_r', d: 'M110 360c7 6 15 9 24 9s17-3 24-9l-7 70c-4 10-10 15-17 15h-4c-7 0-13-5-17-15l-7-70Z', label: 'Right Calf' },
+          { id: 'head', label: 'Head', d: ellipse(p(0.5, 0.058), frame.w * 0.085, frame.h * 0.055) },
+          { id: 'back_upper', label: 'Upper Back', d: poly([p(0.35, 0.18), p(0.65, 0.18), p(0.70, 0.32), p(0.30, 0.32)]) },
+          { id: 'back_lower', label: 'Lower Back', d: poly([p(0.40, 0.32), p(0.60, 0.32), p(0.64, 0.44), p(0.36, 0.44)]) },
+          { id: 'shoulder_l', label: 'Left Shoulder', d: ellipse(p(0.38, 0.20), frame.w * 0.08, frame.h * 0.05) },
+          { id: 'shoulder_r', label: 'Right Shoulder', d: ellipse(p(0.62, 0.20), frame.w * 0.08, frame.h * 0.05) },
+          { id: 'hamstring_l', label: 'Left Hamstring', d: poly([p(0.38, 0.48), p(0.455, 0.48), p(0.47, 0.66), p(0.365, 0.66)]) },
+          { id: 'hamstring_r', label: 'Right Hamstring', d: poly([p(0.545, 0.48), p(0.62, 0.48), p(0.635, 0.66), p(0.53, 0.66)]) },
+          { id: 'calf_l', label: 'Left Calf', d: poly([p(0.41, 0.68), p(0.455, 0.68), p(0.465, 0.92), p(0.395, 0.92)]) },
+          { id: 'calf_r', label: 'Right Calf', d: poly([p(0.545, 0.68), p(0.59, 0.68), p(0.605, 0.92), p(0.535, 0.92)]) },
         ];
 
-  const resolvedBackdropUrl = backdropUrl || (view === 'FRONT' ? '/anatomy-front.png' : '/anatomy-back.png');
-  // Match SVG aspect ratio to the underlying image so the overlay and image letterbox identically.
-  // Front image: 625x975 ≈ 0.641. Back image: 682x1024 ≈ 0.666.
-  const viewBoxWidth = view === 'FRONT' ? 288 : 300; // 450 * ratio ~= width
-  const viewBox = `0 0 ${viewBoxWidth} 450`;
-  const xPad = (viewBoxWidth - 200) / 2;
+  const viewBox = `0 0 ${IMG.w} ${IMG.h}`;
+
+  // Both images now have real alpha channels, so use normal rendering.
+  const imageStyle: React.CSSProperties = {
+    opacity: 1,
+    filter: 'contrast(1.15) brightness(1.05) saturate(0.9)',
+  };
 
   return (
     <div
@@ -102,18 +119,6 @@ export function AnatomicalModel({ view, strainData, className, onPartClick, sele
       }}
     >
       <div className="absolute inset-0 opacity-20 lab-grid" />
-      <img
-        src={resolvedBackdropUrl}
-        alt=""
-        aria-hidden="true"
-        className={cn(
-          'absolute inset-0 w-full h-full object-contain',
-          // Makes the black background visually disappear by blending with the container.
-          'mix-blend-screen opacity-95',
-          // Slight tuning for “x-ray” look.
-          'contrast-125 brightness-110 saturate-50'
-        )}
-      />
 
       <svg viewBox={viewBox} preserveAspectRatio="xMidYMid meet" className="relative w-full h-full drop-shadow-2xl filter transition-all duration-500">
         <defs>
@@ -124,49 +129,39 @@ export function AnatomicalModel({ view, strainData, className, onPartClick, sele
               <feMergeNode in="SourceGraphic"/>
             </feMerge>
           </filter>
-          <linearGradient id="bodyFill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.10)" />
-            <stop offset="55%" stopColor="rgba(255,255,255,0.06)" />
-            <stop offset="100%" stopColor="rgba(255,255,255,0.04)" />
-          </linearGradient>
-          <linearGradient id="bodyStroke" x1="0" x2="1" y1="0" y2="1">
-            <stop offset="0%" stopColor="rgba(0,212,170,0.35)" />
-            <stop offset="100%" stopColor="rgba(0,212,170,0.05)" />
-          </linearGradient>
         </defs>
 
-        {/* Muscle Groups (calibrated to align with image) */}
-        <g transform={`translate(${xPad} 0)`}>
-          <g transform={overlayTransform}>
-            {parts.map((part) => (
-              <motion.path
-                key={part.id}
-                id={part.id}
-                d={part.d}
-                fill="transparent"
-                vectorEffect="non-scaling-stroke"
-                className={cn(
-                  'transition-all duration-300 cursor-pointer',
-                  // Keep highlights soft and minimal.
-                  'drop-shadow-[0_6px_14px_rgba(0,0,0,0.20)]',
-                  'mix-blend-screen',
-                  getColor(part.id)
-                )}
-                onClick={() => onPartClick?.(part.id)}
-                whileHover={{ scale: 1.01, filter: 'url(#softGlow)' }}
-                whileTap={{ scale: 0.98 }}
-                animate={
-                  strainData[part.id] === 'high'
-                    ? {
-                        opacity: [0.55, 0.95, 0.55],
-                      }
-                    : undefined
-                }
-                transition={strainData[part.id] === 'high' ? { repeat: Infinity, duration: 1.8 } : undefined}
-              />
-            ))}
-          </g>
-        </g>
+        {/* Backdrop image inside SVG so overlays share the same coordinate space */}
+        <image
+          href={resolvedBackdropUrl}
+          x={0}
+          y={0}
+          width={IMG.w}
+          height={IMG.h}
+          preserveAspectRatio="xMidYMid meet"
+          style={imageStyle}
+        />
+
+        {/* Muscle Groups */}
+        {parts.map((part) => (
+          <motion.path
+            key={part.id}
+            id={part.id}
+            d={part.d}
+            fill="transparent"
+            vectorEffect="non-scaling-stroke"
+            className={cn(
+              'transition-all duration-200 cursor-pointer',
+              'mix-blend-screen',
+              getColor(part.id)
+            )}
+            onClick={() => onPartClick?.(part.id)}
+            whileHover={{ filter: 'url(#softGlow)' }}
+            whileTap={{ scale: 0.98 }}
+            animate={strainData[part.id] === 'high' ? { opacity: [0.7, 1, 0.7] } : undefined}
+            transition={strainData[part.id] === 'high' ? { repeat: Infinity, duration: 1.6 } : undefined}
+          />
+        ))}
       </svg>
     </div>
   );
