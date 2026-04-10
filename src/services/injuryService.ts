@@ -1,6 +1,8 @@
 import { getGeminiAI } from './gemini';
 import { Athlete } from '../types';
 
+const GEMINI_MODEL = "gemini-2.0-flash";
+
 export const generatePrescription = async (athlete: Athlete, bodyPart: string): Promise<string> => {
   const ai = getGeminiAI();
   const prompt = `
@@ -21,7 +23,7 @@ export const generatePrescription = async (athlete: Athlete, bodyPart: string): 
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: GEMINI_MODEL,
       contents: prompt,
     });
     return response.text || `${athlete.name}: MODERATE risk of strain. Recommended: Reduce intensity and focus on mobility.`;

@@ -10,7 +10,7 @@ export default defineConfig(({mode}) => {
     define: {
       // NOTE: This exposes the key to client-side code at build/dev time.
       // Keep for MVP parity with AI Studio, but do NOT ship this approach to production.
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY || env.VITE_GEMINI_API_KEY || ''),
     },
     resolve: {
       alias: {
