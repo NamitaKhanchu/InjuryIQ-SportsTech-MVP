@@ -9,57 +9,121 @@ interface AnatomicalModelProps {
   className?: string;
   onPartClick?: (partId: string) => void;
   selectedPart?: string;
+  /**
+   * Optional image backdrop (drop files in `public/` and pass `/your-file.png`).
+   * This is purely visual and does not affect click/strain logic.
+   */
+  backdropUrl?: string;
 }
 
-export function AnatomicalModel({ view, strainData, className, onPartClick, selectedPart }: AnatomicalModelProps) {
+export function AnatomicalModel({ view, strainData, className, onPartClick, selectedPart, backdropUrl }: AnatomicalModelProps) {
   const getColor = (partId: string) => {
     const level = strainData[partId];
     const isSelected = selectedPart === partId;
     
-    if (level === 'high') return isSelected ? 'fill-status-red stroke-status-red stroke-2' : 'fill-status-red/40 stroke-status-red/60';
-    if (level === 'medium') return isSelected ? 'fill-status-yellow stroke-status-yellow stroke-2' : 'fill-status-yellow/40 stroke-status-yellow/60';
-    if (level === 'low') return isSelected ? 'fill-status-green stroke-status-green stroke-2' : 'fill-status-green/20 stroke-status-green/40';
-    
-    return isSelected 
-      ? 'fill-slate-300 dark:fill-slate-600 stroke-slate-400 dark:stroke-slate-500 stroke-2' 
-      : 'fill-slate-100 dark:fill-slate-800 stroke-slate-200 dark:stroke-slate-700';
+    // Default: invisible (we still keep it clickable via fill="transparent")
+    if (!level && !isSelected) return 'fill-transparent stroke-transparent';
+
+    // Subtle highlight palette so the underlying image stays clear.
+    if (level === 'high')
+      return isSelected
+        ? 'fill-status-red/55 stroke-status-red/80 stroke-[2.5]'
+        : 'fill-status-red/38 stroke-status-red/55 stroke-[2.25]';
+    if (level === 'medium')
+      return isSelected
+        ? 'fill-status-yellow/50 stroke-status-yellow/75 stroke-[2.5]'
+        : 'fill-status-yellow/34 stroke-status-yellow/50 stroke-[2.25]';
+    if (level === 'low')
+      return isSelected
+        ? 'fill-status-green/38 stroke-status-green/60 stroke-[2.5]'
+        : 'fill-status-green/24 stroke-status-green/40 stroke-[2.25]';
+
+    // Selected but no strain: faint neutral highlight
+    return 'fill-white/26 stroke-white/35 stroke-[2.25]';
   };
 
-  // Simplified but descriptive paths for a professional look
-  const parts = view === 'FRONT' ? [
-    { id: 'head', d: "M100,20 c-10,0 -18,8 -18,18 s8,18 18,18 s18,-8 18,-18 s-8,-18 -18,-18", label: 'Head' },
-    { id: 'neck', d: "M90,56 h20 v10 h-20 z", label: 'Neck' },
-    { id: 'chest', d: "M75,70 h50 l10,40 h-70 z", label: 'Chest' },
-    { id: 'abs', d: "M80,115 h40 l5,50 h-50 z", label: 'Abs' },
-    { id: 'shoulder_l', d: "M60,75 a15,15 0 1,0 15,0 z", label: 'Left Shoulder' },
-    { id: 'shoulder_r', d: "M125,75 a15,15 0 1,0 15,0 z", label: 'Right Shoulder' },
-    { id: 'arm_l', d: "M45,95 h15 v80 h-15 z", label: 'Left Arm' },
-    { id: 'arm_r', d: "M140,95 h15 v80 h-15 z", label: 'Right Arm' },
-    { id: 'quad_l', d: "M75,180 l-10,100 h25 l10,-100 z", label: 'Left Quad' },
-    { id: 'quad_r', d: "M110,180 l10,100 h25 l-10,-100 z", label: 'Right Quad' },
-    { id: 'knee_l', d: "M68,285 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0", label: 'Left Knee' },
-    { id: 'knee_r', d: "M116,285 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0", label: 'Right Knee' },
-    { id: 'calf_l', d: "M65,305 l5,80 h15 l5,-80 z", label: 'Left Calf' },
-    { id: 'calf_r', d: "M110,305 l5,80 h15 l5,-80 z", label: 'Right Calf' },
-  ] : [
-    { id: 'head', d: "M100,20 c-10,0 -18,8 -18,18 s8,18 18,18 s18,-8 18,-18 s-8,-18 -18,-18", label: 'Head' },
-    { id: 'back_upper', d: "M70,70 h60 l5,60 h-70 z", label: 'Upper Back' },
-    { id: 'back_lower', d: "M75,135 h50 l5,40 h-60 z", label: 'Lower Back' },
-    { id: 'shoulder_l', d: "M60,75 a15,15 0 1,0 15,0 z", label: 'Left Shoulder' },
-    { id: 'shoulder_r', d: "M125,75 a15,15 0 1,0 15,0 z", label: 'Right Shoulder' },
-    { id: 'glutes', d: "M75,180 h50 l10,30 h-70 z", label: 'Glutes' },
-    { id: 'hamstring_l', d: "M75,215 l-10,70 h25 l10,-70 z", label: 'Left Hamstring' },
-    { id: 'hamstring_r', d: "M110,215 l10,70 h25 l-10,-70 z", label: 'Right Hamstring' },
-    { id: 'calf_l', d: "M65,305 l5,80 h15 l5,-80 z", label: 'Left Calf' },
-    { id: 'calf_r', d: "M110,305 l5,80 h15 l5,-80 z", label: 'Right Calf' },
-  ];
+  const resolvedBackdropUrl = backdropUrl || (view === 'FRONT' ? '/anatomy-front.png' : '/anatomy-back.png');
+
+  // Use the image's native pixel coordinates as the overlay coordinate system.
+  // This guarantees that highlights line up with the actual image, even with letterboxing.
+  const IMG = view === 'FRONT' ? { w: 400, h: 624 } : { w: 408, h: 612 };
+
+  type Pt = { x: number; y: number };
+  type Part = { id: string; d: string; label: string };
+
+  const frame =
+    view === 'FRONT'
+      ? { x: 77, y: 38, w: 246, h: 563 } // tuned for anatomy-front.png (400x624)
+      : { x: 75, y: 42, w: 257, h: 538 }; // tuned for anatomy-back.png (408x612)
+
+  const p = (nx: number, ny: number): Pt => ({
+    x: frame.x + nx * frame.w,
+    y: frame.y + ny * frame.h,
+  });
+
+  const poly = (pts: Pt[]) =>
+    `M ${pts[0].x} ${pts[0].y} ` + pts.slice(1).map((q) => `L ${q.x} ${q.y}`).join(' ') + ' Z';
+
+  const ellipse = (c: Pt, rx: number, ry: number) =>
+    `M ${c.x - rx} ${c.y} a ${rx} ${ry} 0 1 0 ${rx * 2} 0 a ${rx} ${ry} 0 1 0 ${-rx * 2} 0`;
+
+  const parts: Part[] =
+    view === 'FRONT'
+      ? [
+          { id: 'head', label: 'Head', d: ellipse(p(0.5, 0.055), frame.w * 0.085, frame.h * 0.055) },
+          { id: 'neck', label: 'Neck', d: poly([p(0.47, 0.115), p(0.53, 0.115), p(0.54, 0.155), p(0.46, 0.155)]) },
+          { id: 'chest', label: 'Chest', d: poly([p(0.34, 0.17), p(0.66, 0.17), p(0.72, 0.30), p(0.28, 0.30)]) },
+          { id: 'abs', label: 'Abs', d: poly([p(0.38, 0.30), p(0.62, 0.30), p(0.66, 0.42), p(0.34, 0.42)]) },
+          { id: 'shoulder_l', label: 'Left Shoulder', d: ellipse(p(0.38, 0.19), frame.w * 0.08, frame.h * 0.05) },
+          { id: 'shoulder_r', label: 'Right Shoulder', d: ellipse(p(0.62, 0.19), frame.w * 0.08, frame.h * 0.05) },
+          // Quads / hamstrings / calves
+          { id: 'quad_l', label: 'Left Quad', d: poly([p(0.38, 0.46), p(0.455, 0.46), p(0.47, 0.66), p(0.365, 0.66)]) },
+          { id: 'quad_r', label: 'Right Quad', d: poly([p(0.545, 0.46), p(0.62, 0.46), p(0.635, 0.66), p(0.53, 0.66)]) },
+          // Front view: map hamstrings to the same approximate thigh regions (keeps demo strain IDs usable).
+          { id: 'hamstring_l', label: 'Left Hamstring', d: poly([p(0.38, 0.48), p(0.455, 0.48), p(0.47, 0.66), p(0.365, 0.66)]) },
+          { id: 'hamstring_r', label: 'Right Hamstring', d: poly([p(0.545, 0.48), p(0.62, 0.48), p(0.635, 0.66), p(0.53, 0.66)]) },
+          { id: 'calf_l', label: 'Left Calf', d: poly([p(0.41, 0.68), p(0.455, 0.68), p(0.465, 0.92), p(0.395, 0.92)]) },
+          { id: 'calf_r', label: 'Right Calf', d: poly([p(0.545, 0.68), p(0.59, 0.68), p(0.605, 0.92), p(0.535, 0.92)]) },
+        ]
+      : [
+          { id: 'head', label: 'Head', d: ellipse(p(0.5, 0.058), frame.w * 0.085, frame.h * 0.055) },
+          { id: 'back_upper', label: 'Upper Back', d: poly([p(0.35, 0.18), p(0.65, 0.18), p(0.70, 0.32), p(0.30, 0.32)]) },
+          { id: 'back_lower', label: 'Lower Back', d: poly([p(0.40, 0.32), p(0.60, 0.32), p(0.64, 0.44), p(0.36, 0.44)]) },
+          { id: 'shoulder_l', label: 'Left Shoulder', d: ellipse(p(0.38, 0.20), frame.w * 0.08, frame.h * 0.05) },
+          { id: 'shoulder_r', label: 'Right Shoulder', d: ellipse(p(0.62, 0.20), frame.w * 0.08, frame.h * 0.05) },
+          { id: 'hamstring_l', label: 'Left Hamstring', d: poly([p(0.38, 0.48), p(0.455, 0.48), p(0.47, 0.66), p(0.365, 0.66)]) },
+          { id: 'hamstring_r', label: 'Right Hamstring', d: poly([p(0.545, 0.48), p(0.62, 0.48), p(0.635, 0.66), p(0.53, 0.66)]) },
+          { id: 'calf_l', label: 'Left Calf', d: poly([p(0.41, 0.68), p(0.455, 0.68), p(0.465, 0.92), p(0.395, 0.92)]) },
+          { id: 'calf_r', label: 'Right Calf', d: poly([p(0.545, 0.68), p(0.59, 0.68), p(0.605, 0.92), p(0.535, 0.92)]) },
+        ];
+
+  const viewBox = `0 0 ${IMG.w} ${IMG.h}`;
+
+  // Both images now have real alpha channels, so use normal rendering.
+  const imageStyle: React.CSSProperties = {
+    opacity: 1,
+    filter: 'contrast(1.15) brightness(1.05) saturate(0.9)',
+  };
 
   return (
-    <div className={cn("relative aspect-[1/2] w-full max-w-[350px] mx-auto", className)}>
-      <svg viewBox="0 0 200 450" className="w-full h-full drop-shadow-2xl filter transition-all duration-500">
+    <div
+      className={cn(
+        'relative aspect-[1/2] w-full max-w-[380px] mx-auto rounded-[2.5rem] overflow-hidden',
+        'bg-transparent ring-1 ring-slate-200/60 dark:ring-white/10 shadow-2xl shadow-black/10',
+        className
+      )}
+      style={{
+        backgroundImage: `radial-gradient(circle at 20% 15%, rgba(0,212,170,0.12), transparent 45%), radial-gradient(circle at 80% 85%, rgba(0,212,170,0.06), transparent 55%), radial-gradient(circle at 50% 50%, rgba(255,255,255,0.04), transparent 55%)`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }}
+    >
+      <div className="absolute inset-0 opacity-20 lab-grid" />
+
+      <svg viewBox={viewBox} preserveAspectRatio="xMidYMid meet" className="relative w-full h-full drop-shadow-2xl filter transition-all duration-500">
         <defs>
-          <filter id="glow">
-            <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+          <filter id="softGlow">
+            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
             <feMerge>
               <feMergeNode in="coloredBlur"/>
               <feMergeNode in="SourceGraphic"/>
@@ -67,10 +131,15 @@ export function AnatomicalModel({ view, strainData, className, onPartClick, sele
           </filter>
         </defs>
 
-        {/* Body Outline */}
-        <path 
-          d="M100,15 L115,15 L125,30 L135,60 L150,70 L165,90 L165,180 L155,200 L145,300 L140,400 L120,430 L100,430 L80,430 L60,400 L55,300 L45,200 L35,180 L35,90 L50,70 L65,60 L75,30 L85,15 Z" 
-          className="fill-slate-50 dark:fill-slate-900/50 stroke-slate-200 dark:stroke-slate-800 stroke-2 transition-colors duration-500"
+        {/* Backdrop image inside SVG so overlays share the same coordinate space */}
+        <image
+          href={resolvedBackdropUrl}
+          x={0}
+          y={0}
+          width={IMG.w}
+          height={IMG.h}
+          preserveAspectRatio="xMidYMid meet"
+          style={imageStyle}
         />
 
         {/* Muscle Groups */}
@@ -79,26 +148,21 @@ export function AnatomicalModel({ view, strainData, className, onPartClick, sele
             key={part.id}
             id={part.id}
             d={part.d}
+            fill="transparent"
+            vectorEffect="non-scaling-stroke"
             className={cn(
-              "transition-all duration-500 cursor-pointer",
+              'transition-all duration-200 cursor-pointer',
+              'mix-blend-screen',
               getColor(part.id)
             )}
             onClick={() => onPartClick?.(part.id)}
-            whileHover={{ scale: 1.02, filter: "url(#glow)" }}
+            whileHover={{ filter: 'url(#softGlow)' }}
             whileTap={{ scale: 0.98 }}
-            animate={strainData[part.id] === 'high' ? { 
-              opacity: [0.7, 1, 0.7],
-              filter: ["url(#glow)", "url(#glow)", "url(#glow)"]
-            } : {}}
-            transition={{ repeat: Infinity, duration: 2 }}
+            animate={strainData[part.id] === 'high' ? { opacity: [0.7, 1, 0.7] } : undefined}
+            transition={strainData[part.id] === 'high' ? { repeat: Infinity, duration: 1.6 } : undefined}
           />
         ))}
       </svg>
-      
-      {/* View Indicator */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-full text-[10px] font-black text-white uppercase tracking-widest">
-        {view} VIEW
-      </div>
     </div>
   );
 }

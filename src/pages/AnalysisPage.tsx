@@ -24,6 +24,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { analyzeAthleteStrain } from '../services/aiService';
+import { analyzeCvVideo, type CvAnalysisResult } from '../services/cvAnalysisService';
 import { MOCK_ATHLETES } from '../constants';
 import { AnatomicalModel } from '../components/AnatomicalModel';
 import { StrainMap, AiAssessment } from '../types';
@@ -40,8 +41,9 @@ export function AnalysisPage() {
   const [isShared, setIsShared] = React.useState(false);
   const [analysisMode, setAnalysisMode] = React.useState<'SMART' | 'CV'>('SMART');
   const [isCvAnalyzing, setIsCvAnalyzing] = React.useState(false);
+  const [cvFile, setCvFile] = React.useState<File | null>(null);
   const [cvVideo, setCvVideo] = React.useState<string | null>(null);
-  const [cvResults, setCvResults] = React.useState<any | null>(null);
+  const [cvResults, setCvResults] = React.useState<CvAnalysisResult | null>(null);
   const [cvHistory, setCvHistory] = React.useState<any[]>([]);
   const [showHistory, setShowHistory] = React.useState(false);
 
@@ -100,32 +102,46 @@ export function AnalysisPage() {
     const file = e.target.files?.[0];
     if (file) {
       const url = URL.createObjectURL(file);
+      setCvFile(file);
       setCvVideo(url);
       setCvResults(null);
     }
   };
 
   const handleCvAnalyze = async () => {
+    if (!cvFile) return;
     setIsCvAnalyzing(true);
     try {
-      // Simulate CV Analysis pipeline
-      await new Promise(resolve => setTimeout(resolve, 4000));
-      setCvResults({
-        detectedMuscles: [
-          { name: 'Right Quad', strain: 'high', confidence: 0.94 },
-          { name: 'Left Hamstring', strain: 'medium', confidence: 0.88 },
-          { name: 'Lower Back', strain: 'low', confidence: 0.91 }
-        ],
-        summary: "Computer Vision detected abnormal lateral shift in the frontal plane during the eccentric phase of the squat. High torque detected on the right patellar tendon."
-      });
+      const result = await analyzeCvVideo(cvFile);
+      setCvResults(result);
+
+      if (result.annotatedVideoUrl) {
+        setCvVideo(result.annotatedVideoUrl);
+      }
       
       // Add to mock history
       setCvHistory(prev => [{
         id: Math.random().toString(),
         date: new Date().toISOString().split('T')[0],
-        summary: "Computer Vision detected abnormal lateral shift in the frontal plane",
-        strain: 'high'
+        summary: (result.summary || 'CV analysis complete').slice(0, 72),
+        strain: result.detectedMuscles?.some(m => m.strain === 'high') ? 'high' : 'low'
       }, ...prev]);
+    } catch (e) {
+      console.error('CV analysis failed', e);
+      // Keep UI usable even if backend isn't running yet.
+      setCvResults({
+        detectedMuscles: [
+          { name: 'Right Quad', strain: 'high', confidence: 0.94 },
+          { name: 'Left Hamstring', strain: 'medium', confidence: 0.88 },
+          { name: 'Lower Back', strain: 'low', confidence: 0.91 },
+        ],
+        summary:
+          'CV backend unavailable. Showing demo results. Start your teammate’s backend on localhost:4000 (or set CV_BACKEND_URL) to enable real analysis.',
+        overlayPoints: [
+          { x: 0.33, y: 0.25, severity: 'high' },
+          { x: 0.5, y: 0.5, severity: 'medium' },
+        ],
+      });
     } finally {
       setIsCvAnalyzing(false);
     }
@@ -385,7 +401,7 @@ export function AnalysisPage() {
                       <div className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-4 transition-colors">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">AI Summary</span>
-                          <div className="px-2 py-0.5 bg-accent/10 rounded text-[8px] font-black text-accent uppercase">Gemini 3.1 Flash</div>
+                          <div className="px-2 py-0.5 bg-accent/10 rounded text-[8px] font-black text-accent uppercase">Gemini 2.0 Flash</div>
                         </div>
                         <p className="text-primary dark:text-white font-bold text-lg leading-snug transition-colors">
                           {assessment.summary}
@@ -584,17 +600,29 @@ export function AnalysisPage() {
 
                         {cvResults && (
                           <div className="absolute inset-0 pointer-events-none">
-                            {/* Mock CV Overlays */}
-                            <motion.div 
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              className="absolute top-1/4 left-1/3 w-4 h-4 bg-status-red rounded-full shadow-[0_0_10px_rgba(255,59,48,0.8)] animate-pulse"
-                            />
-                            <motion.div 
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              className="absolute top-1/2 left-1/2 w-4 h-4 bg-status-yellow rounded-full shadow-[0_0_10px_rgba(255,149,0,0.8)] animate-pulse"
-                            />
+                            {(cvResults.overlayPoints || []).map((pt, idx) => {
+                              const xPct = pt.x <= 1 ? pt.x * 100 : pt.x;
+                              const yPct = pt.y <= 1 ? pt.y * 100 : pt.y;
+                              const color =
+                                pt.severity === 'high'
+                                  ? 'bg-status-red shadow-[0_0_10px_rgba(255,59,48,0.8)]'
+                                  : pt.severity === 'medium'
+                                    ? 'bg-status-yellow shadow-[0_0_10px_rgba(255,149,0,0.8)]'
+                                    : 'bg-status-green shadow-[0_0_10px_rgba(52,199,89,0.8)]';
+
+                              return (
+                                <motion.div
+                                  key={idx}
+                                  initial={{ opacity: 0 }}
+                                  animate={{ opacity: 1 }}
+                                  className={cn(
+                                    'absolute w-4 h-4 rounded-full -translate-x-1/2 -translate-y-1/2 animate-pulse',
+                                    color
+                                  )}
+                                  style={{ left: `${xPct}%`, top: `${yPct}%` }}
+                                />
+                              );
+                            })}
                             <div className="absolute bottom-4 left-4 bg-black/80 backdrop-blur-md p-3 rounded-xl border border-white/10">
                               <p className="text-[8px] font-black text-accent uppercase tracking-widest mb-1">CV Real-time Telemetry</p>
                               <div className="grid grid-cols-2 gap-x-4 gap-y-1">
@@ -646,7 +674,7 @@ export function AnalysisPage() {
                           </div>
 
                           <button 
-                            onClick={() => setCvVideo(null)}
+                            onClick={() => { setCvVideo(null); setCvFile(null); }}
                             className="w-full py-3 border border-slate-200 dark:border-slate-800 text-slate-500 text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
                           >
                             Reset Analysis
@@ -662,7 +690,7 @@ export function AnalysisPage() {
                             {isCvAnalyzing ? 'Processing Biometrics...' : 'Run CV Breakdown'}
                           </button>
                           <button 
-                            onClick={() => setCvVideo(null)}
+                            onClick={() => { setCvVideo(null); setCvFile(null); }}
                             className="px-6 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-black rounded-2xl hover:bg-slate-200 transition-all"
                           >
                             <Upload className="w-5 h-5" />
