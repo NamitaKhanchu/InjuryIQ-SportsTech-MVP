@@ -12,12 +12,35 @@ View your app in AI Studio: https://ai.studio/apps/0d1b37dd-514b-4cf8-8cd1-26a2d
 
 **Prerequisites:** Node.js (recommended: Node 22 LTS; minimum: Node 20.19+)
 
-
 1. Install dependencies:
    `npm install`
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## CV Analysis backend (video upload)
+
+The **CV Analysis** tab in `src/pages/AnalysisPage.tsx` uploads a video to `POST /cv/analyze`.
+
+- In local dev, Vite proxies `/cv/*` to a backend (default `http://localhost:4000`) via `vite.config.ts`.
+- The backend lives in `cv-backend/` and exposes `POST /analyze` (the proxy rewrites `/cv/analyze` → `/analyze`).
+
+### Run the CV backend locally
+
+```bash
+python -m venv cv-backend/.venv
+source cv-backend/.venv/bin/activate
+pip install -r cv-backend/requirements.txt
+uvicorn cv-backend.app.main:app --host 0.0.0.0 --port 4000 --reload
+```
+
+Then in another terminal run the frontend:
+
+```bash
+npm run dev
+```
+
+Open `http://localhost:3000/analysis` → **CV Analysis** → upload a video.
 
 ### If install breaks (native deps / Tailwind)
 Run a clean reinstall:

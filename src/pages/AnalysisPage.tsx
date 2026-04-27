@@ -46,6 +46,10 @@ export function AnalysisPage() {
   const [cvResults, setCvResults] = React.useState<CvAnalysisResult | null>(null);
   const [cvHistory, setCvHistory] = React.useState<any[]>([]);
   const [showHistory, setShowHistory] = React.useState(false);
+  const cvVideoRef = React.useRef<HTMLVideoElement | null>(null);
+  const cvCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const cvStageRef = React.useRef<HTMLDivElement | null>(null);
+  const [cvNow, setCvNow] = React.useState(0);
 
   const athlete = MOCK_ATHLETES.find(a => a.id === selectedAthleteId) || MOCK_ATHLETES[0];
 
@@ -146,6 +150,189 @@ export function AnalysisPage() {
       setIsCvAnalyzing(false);
     }
   };
+
+  const telemetryNow = React.useMemo(() => {
+    const tel = cvResults?.telemetry;
+    if (!tel?.length) return null;
+    // Find closest telemetry point to current time.
+    let best = tel[0];
+    let bestD = Math.abs(best.t - cvNow);
+    for (let i = 1; i < tel.length; i++) {
+      const d = Math.abs(tel[i].t - cvNow);
+      if (d < bestD) {
+        best = tel[i];
+        bestD = d;
+      }
+    }
+    return best;
+  }, [cvResults?.telemetry, cvNow]);
+
+  const riskColor = (risk?: 'low' | 'medium' | 'high' | null) => {
+    if (risk === 'high') return 'rgba(255, 59, 48, 0.95)';
+    if (risk === 'medium') return 'rgba(255, 149, 0, 0.95)';
+    return 'rgba(52, 199, 89, 0.9)';
+  };
+
+  const POSE_CONNECTIONS: Array<[number, number]> = [
+    // torso
+    [11, 12], [11, 23], [12, 24], [23, 24],
+    // left arm
+    [11, 13], [13, 15],
+    // right arm
+    [12, 14], [14, 16],
+    // left leg
+    [23, 25], [25, 27], [27, 29], [29, 31],
+    // right leg
+    [24, 26], [26, 28], [28, 30], [30, 32],
+    // shoulders to head-ish
+    [11, 0], [12, 0],
+  ];
+
+  React.useEffect(() => {
+    const video = cvVideoRef.current;
+    const canvas = cvCanvasRef.current;
+    const stage = cvStageRef.current;
+    if (!video || !canvas || !stage) return;
+    if (!cvResults?.telemetry?.length) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let raf = 0;
+
+    const resize = () => {
+      const rect = stage.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+      canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+      canvas.style.width = `${rect.width}px`;
+      canvas.style.height = `${rect.height}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+
+    const ro = new ResizeObserver(() => resize());
+    ro.observe(stage);
+    resize();
+
+    const draw = () => {
+      const rect = stage.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
+      ctx.clearRect(0, 0, w, h);
+
+      // Map normalized pose coords (0..1) to the actual displayed video rect when using object-contain.
+      // Without this, points drift into the letterboxed area and the skeleton appears offset.
+      const vw = video.videoWidth || 0;
+      const vh = video.videoHeight || 0;
+      if (vw <= 0 || vh <= 0) {
+        raf = window.requestAnimationFrame(draw);
+        return;
+      }
+      const scale = Math.min(w / vw, h / vh);
+      const drawW = vw * scale;
+      const drawH = vh * scale;
+      const offX = (w - drawW) / 2;
+      const offY = (h - drawH) / 2;
+      const px = (nx: number) => offX + nx * drawW;
+      const py = (ny: number) => offY + ny * drawH;
+
+      // Find nearest telemetry point to currentTime.
+      const t = video.currentTime || cvNow;
+      const tel = cvResults.telemetry!;
+      let best = tel[0];
+      let bestD = Math.abs(best.t - t);
+      for (let i = 1; i < tel.length; i++) {
+        const d = Math.abs(tel[i].t - t);
+        if (d < bestD) {
+          best = tel[i];
+          bestD = d;
+        }
+      }
+
+      const points = best.pose?.points;
+      if (points?.length) {
+        const leftRisk = best.leftRisk ?? null;
+        const rightRisk = best.rightRisk ?? null;
+
+        const leftCol = riskColor(leftRisk);
+        const rightCol = riskColor(rightRisk);
+        const baseCol = 'rgba(0, 212, 170, 0.55)'; // accent-ish teal
+
+        const getCol = (idxA: number, idxB: number) => {
+          // Color lower limbs based on side risk; others use base.
+          const leftSet = new Set([23, 25, 27, 29, 31, 24]); // include hips
+          const rightSet = new Set([24, 26, 28, 30, 32, 23]);
+          const isLeft = leftSet.has(idxA) && leftSet.has(idxB);
+          const isRight = rightSet.has(idxA) && rightSet.has(idxB);
+          if (isLeft) return leftCol;
+          if (isRight) return rightCol;
+          return baseCol;
+        };
+
+        // Draw connections (skeleton lines)
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        for (const [a, b] of POSE_CONNECTIONS) {
+          const pa = points[a];
+          const pb = points[b];
+          if (!pa || !pb) continue;
+          if ((pa.v ?? 1) < 0.35 || (pb.v ?? 1) < 0.35) continue;
+          ctx.strokeStyle = getCol(a, b);
+          ctx.beginPath();
+          ctx.moveTo(px(pa.x), py(pa.y));
+          ctx.lineTo(px(pb.x), py(pb.y));
+          ctx.stroke();
+        }
+
+        // Draw keypoints (knee markers stronger, like your screenshot)
+        const kneeRadius = 10;
+        const dotRadius = 4;
+        const kneeL = points[25];
+        const kneeR = points[26];
+
+        const drawDot = (p: {x:number;y:number;v?:number}, r: number, fill: string) => {
+          if ((p.v ?? 1) < 0.35) return;
+          ctx.fillStyle = fill;
+          ctx.beginPath();
+          ctx.arc(px(p.x), py(p.y), r, 0, Math.PI * 2);
+          ctx.fill();
+        };
+
+        for (let i = 0; i < points.length; i++) {
+          const p = points[i];
+          if (!p) continue;
+          // Skip knees; drawn below.
+          if (i === 25 || i === 26) continue;
+          drawDot(p, dotRadius, 'rgba(0, 255, 157, 0.75)');
+        }
+        if (kneeL) drawDot(kneeL, kneeRadius, riskColor(leftRisk));
+        if (kneeR) drawDot(kneeR, kneeRadius, riskColor(rightRisk));
+      }
+
+      raf = window.requestAnimationFrame(draw);
+    };
+
+    raf = window.requestAnimationFrame(draw);
+    return () => {
+      ro.disconnect();
+      if (raf) window.cancelAnimationFrame(raf);
+    };
+  }, [cvResults, cvNow]);
+
+  const activeEvent = React.useMemo(() => {
+    const evts = cvResults?.events;
+    if (!evts?.length) return null;
+    let best = evts[0];
+    let bestD = Math.abs(best.t - cvNow);
+    for (let i = 1; i < evts.length; i++) {
+      const d = Math.abs(evts[i].t - cvNow);
+      if (d < bestD) {
+        best = evts[i];
+        bestD = d;
+      }
+    }
+    return bestD <= 0.35 ? best : null;
+  }, [cvResults?.events, cvNow]);
 
   return (
     <div className="space-y-8 pb-20 lg:pb-8">
@@ -568,8 +755,21 @@ export function AnalysisPage() {
                     </div>
                   ) : (
                     <div className="flex-1 space-y-6">
-                      <div className="relative aspect-video bg-black rounded-2xl overflow-hidden group">
-                        <video src={cvVideo} className="w-full h-full object-contain" />
+                      <div ref={cvStageRef} className="relative aspect-video bg-black rounded-2xl overflow-hidden group">
+                        <video
+                          ref={cvVideoRef}
+                          src={cvVideo}
+                          className="w-full h-full object-contain"
+                          controls
+                          onTimeUpdate={(e) => {
+                            const t = (e.currentTarget as HTMLVideoElement).currentTime;
+                            setCvNow(t);
+                          }}
+                        />
+                        <canvas
+                          ref={cvCanvasRef}
+                          className="absolute inset-0 pointer-events-none"
+                        />
                         
                         {isCvAnalyzing && (
                           <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex flex-col items-center justify-center space-y-4">
@@ -600,37 +800,67 @@ export function AnalysisPage() {
 
                         {cvResults && (
                           <div className="absolute inset-0 pointer-events-none">
-                            {(cvResults.overlayPoints || []).map((pt, idx) => {
-                              const xPct = pt.x <= 1 ? pt.x * 100 : pt.x;
-                              const yPct = pt.y <= 1 ? pt.y * 100 : pt.y;
-                              const color =
-                                pt.severity === 'high'
-                                  ? 'bg-status-red shadow-[0_0_10px_rgba(255,59,48,0.8)]'
-                                  : pt.severity === 'medium'
-                                    ? 'bg-status-yellow shadow-[0_0_10px_rgba(255,149,0,0.8)]'
-                                    : 'bg-status-green shadow-[0_0_10px_rgba(52,199,89,0.8)]';
-
-                              return (
-                                <motion.div
-                                  key={idx}
-                                  initial={{ opacity: 0 }}
-                                  animate={{ opacity: 1 }}
-                                  className={cn(
-                                    'absolute w-4 h-4 rounded-full -translate-x-1/2 -translate-y-1/2 animate-pulse',
-                                    color
-                                  )}
-                                  style={{ left: `${xPct}%`, top: `${yPct}%` }}
-                                />
-                              );
-                            })}
-                            <div className="absolute bottom-4 left-4 bg-black/80 backdrop-blur-md p-3 rounded-xl border border-white/10">
-                              <p className="text-[8px] font-black text-accent uppercase tracking-widest mb-1">CV Real-time Telemetry</p>
-                              <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                                <span className="text-[10px] text-white/60">Knee Valgus:</span>
-                                <span className="text-[10px] text-status-red font-bold">7.2° (Critical)</span>
-                                <span className="text-[10px] text-white/60">Hip Symmetry:</span>
-                                <span className="text-[10px] text-status-yellow font-bold">88%</span>
+                            <div className="absolute top-3 left-3 max-w-[min(520px,92%)] space-y-2">
+                              <div className="bg-black/70 backdrop-blur-md p-3 rounded-xl border border-white/10">
+                                <p className="text-[10px] font-black text-accent uppercase tracking-widest mb-2">Pose Telemetry</p>
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between gap-6">
+                                    <span className="text-sm text-white/60 font-bold">Frame</span>
+                                    <span className="text-sm text-white font-black tabular-nums">{telemetryNow?.frame ?? '—'}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between gap-6">
+                                    <span className="text-sm text-white/60 font-bold">Left Knee Angle</span>
+                                    <span className="text-sm text-white font-black tabular-nums">{telemetryNow?.leftKneeAngle ?? '—'}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between gap-6">
+                                    <span className="text-sm text-white/60 font-bold">Right Knee Angle</span>
+                                    <span className="text-sm text-white font-black tabular-nums">{telemetryNow?.rightKneeAngle ?? '—'}</span>
+                                  </div>
+                                </div>
                               </div>
+
+                              {activeEvent && (
+                                <div
+                                  className={cn(
+                                    "bg-black/75 backdrop-blur-md p-4 rounded-2xl border-2 shadow-2xl",
+                                    activeEvent.risk === 'high'
+                                      ? "border-status-red"
+                                      : activeEvent.risk === 'medium'
+                                        ? "border-status-yellow"
+                                        : "border-status-green"
+                                  )}
+                                >
+                                  <div className="space-y-1">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <p className="text-sm font-black uppercase tracking-tight text-white">
+                                        {activeEvent.side === 'R'
+                                          ? 'Right Knee'
+                                          : activeEvent.side === 'L'
+                                            ? 'Left Knee'
+                                            : 'Knee'}
+                                      </p>
+                                      <span
+                                        className={cn(
+                                          "px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border",
+                                          activeEvent.risk === 'high'
+                                            ? "text-status-red border-status-red/40 bg-status-red/10"
+                                            : activeEvent.risk === 'medium'
+                                              ? "text-status-yellow border-status-yellow/40 bg-status-yellow/10"
+                                              : "text-status-green border-status-green/40 bg-status-green/10"
+                                        )}
+                                      >
+                                        {activeEvent.risk.toUpperCase()}
+                                      </span>
+                                    </div>
+
+                                    <p className="text-[10px] text-white/60 font-bold uppercase tracking-widest tabular-nums">
+                                      IC: {activeEvent.ic.toFixed(2)}s • Now: {cvNow.toFixed(2)}s
+                                    </p>
+
+                                    <p className="text-white text-sm font-bold">Cue: {activeEvent.cue}</p>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                         )}

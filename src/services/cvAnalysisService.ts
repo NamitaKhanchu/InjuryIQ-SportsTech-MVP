@@ -20,6 +20,26 @@ export type CvAnalysisResult = {
   detectedMuscles: CvDetectedMuscle[];
   overlayPoints?: CvOverlayPoint[];
   annotatedVideoUrl?: string;
+  telemetry?: Array<{
+    t: number;
+    frame: number;
+    leftKneeAngle?: number | null;
+    rightKneeAngle?: number | null;
+    leftValgus?: number | null;
+    rightValgus?: number | null;
+    leftRisk?: CvStrainLevel | null;
+    rightRisk?: CvStrainLevel | null;
+    pose?: { points: Array<{ x: number; y: number; v?: number }> } | null;
+  }>;
+  events?: Array<{
+    id: string;
+    risk: CvStrainLevel;
+    cue: string;
+    ic: number;
+    t: number;
+    side?: string;
+  }>;
+  meta?: Record<string, unknown>;
 };
 
 export async function analyzeCvVideo(file: File): Promise<CvAnalysisResult> {
