@@ -19,12 +19,14 @@ import {
   Video,
   Upload,
   Play,
-  Eye
+  Eye,
+  Trash2
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { analyzeAthleteStrain } from '../services/aiService';
 import { analyzeCvVideo, type CvAnalysisResult } from '../services/cvAnalysisService';
+import { deleteCvHistoryEntry, listCvHistoryForAthlete, loadCvHistoryEntry, saveCvHistoryEntry, type CvHistoryEntry } from '../services/cvHistoryService';
 import { MOCK_ATHLETES } from '../constants';
 import { AnatomicalModel } from '../components/AnatomicalModel';
 import { StrainMap, AiAssessment } from '../types';
@@ -44,14 +46,58 @@ export function AnalysisPage() {
   const [cvFile, setCvFile] = React.useState<File | null>(null);
   const [cvVideo, setCvVideo] = React.useState<string | null>(null);
   const [cvResults, setCvResults] = React.useState<CvAnalysisResult | null>(null);
-  const [cvHistory, setCvHistory] = React.useState<any[]>([]);
+  const [cvHistory, setCvHistory] = React.useState<CvHistoryEntry[]>([]);
   const [showHistory, setShowHistory] = React.useState(false);
+  const [cvNameOpen, setCvNameOpen] = React.useState(false);
+  const [cvPendingName, setCvPendingName] = React.useState('');
   const cvVideoRef = React.useRef<HTMLVideoElement | null>(null);
   const cvCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const cvStageRef = React.useRef<HTMLDivElement | null>(null);
   const [cvNow, setCvNow] = React.useState(0);
+  const prevAnalysisModeRef = React.useRef<'SMART' | 'CV'>(analysisMode);
 
   const athlete = MOCK_ATHLETES.find(a => a.id === selectedAthleteId) || MOCK_ATHLETES[0];
+
+  const resetCvToUpload = React.useCallback(() => {
+    setCvNow(0);
+    setCvResults(null);
+    setCvFile(null);
+    setCvVideo(null);
+  }, []);
+
+  // Load CV history scoped to the selected athlete.
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const entries = await listCvHistoryForAthlete(selectedAthleteId);
+        if (!cancelled) setCvHistory(entries);
+      } catch (e) {
+        console.warn('Failed to load CV history', e);
+        if (!cancelled) setCvHistory([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAthleteId]);
+
+  // Revoke blob URLs to avoid leaks.
+  React.useEffect(() => {
+    return () => {
+      if (cvVideo?.startsWith('blob:')) URL.revokeObjectURL(cvVideo);
+    };
+  }, [cvVideo]);
+
+  // If user leaves CV mode and comes back later, start fresh on the upload screen.
+  React.useEffect(() => {
+    const prev = prevAnalysisModeRef.current;
+    prevAnalysisModeRef.current = analysisMode;
+    if (prev !== 'CV' && analysisMode === 'CV') {
+      setShowHistory(false);
+      resetCvToUpload();
+    }
+  }, [analysisMode, resetCvToUpload]);
 
   const handleSmartScan = async () => {
     setIsScanning(true);
@@ -109,10 +155,13 @@ export function AnalysisPage() {
       setCvFile(file);
       setCvVideo(url);
       setCvResults(null);
+      // Suggest a default name from filename (without extension)
+      const base = file.name.replace(/\.[^/.]+$/, '');
+      setCvPendingName(base || `Analysis ${new Date().toISOString().split('T')[0]}`);
     }
   };
 
-  const handleCvAnalyze = async () => {
+  const handleCvAnalyze = async (title: string) => {
     if (!cvFile) return;
     setIsCvAnalyzing(true);
     try {
@@ -123,13 +172,9 @@ export function AnalysisPage() {
         setCvVideo(result.annotatedVideoUrl);
       }
       
-      // Add to mock history
-      setCvHistory(prev => [{
-        id: Math.random().toString(),
-        date: new Date().toISOString().split('T')[0],
-        summary: (result.summary || 'CV analysis complete').slice(0, 72),
-        strain: result.detectedMuscles?.some(m => m.strain === 'high') ? 'high' : 'low'
-      }, ...prev]);
+      // Persist to athlete-scoped history (video + result) so a coach can revisit later.
+      await saveCvHistoryEntry({ athleteId: selectedAthleteId, file: cvFile, result, title });
+      setCvHistory(await listCvHistoryForAthlete(selectedAthleteId));
     } catch (e) {
       console.error('CV analysis failed', e);
       // Keep UI usable even if backend isn't running yet.
@@ -148,6 +193,33 @@ export function AnalysisPage() {
       });
     } finally {
       setIsCvAnalyzing(false);
+    }
+  };
+
+  const startCvAnalyzeFlow = () => {
+    if (!cvFile) return;
+    setCvNameOpen(true);
+  };
+
+  const openHistoryEntry = async (entryId: string) => {
+    try {
+      const { entry, videoBlob } = await loadCvHistoryEntry(entryId);
+      const url = URL.createObjectURL(videoBlob);
+      setCvResults(entry.result);
+      setCvVideo(url);
+      setCvFile(new File([videoBlob], entry.filename, { type: videoBlob.type || 'video/mp4' }));
+      setShowHistory(false);
+    } catch (e) {
+      console.error('Failed to open history entry', e);
+    }
+  };
+
+  const deleteHistoryEntry = async (entryId: string) => {
+    try {
+      await deleteCvHistoryEntry(entryId);
+      setCvHistory(await listCvHistoryForAthlete(selectedAthleteId));
+    } catch (e) {
+      console.error('Failed to delete history entry', e);
     }
   };
 
@@ -684,7 +756,10 @@ export function AnalysisPage() {
 
                     <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl">
                       <button 
-                        onClick={() => setShowHistory(false)}
+                        onClick={() => {
+                          setShowHistory(false);
+                          resetCvToUpload();
+                        }}
                         className={cn(
                           "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
                           !showHistory ? "bg-white dark:bg-slate-800 text-primary dark:text-white shadow-sm" : "text-slate-500"
@@ -710,7 +785,11 @@ export function AnalysisPage() {
                       {cvHistory.length > 0 ? (
                         <div className="space-y-3">
                           {cvHistory.map(item => (
-                            <div key={item.id} className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center justify-between group hover:border-accent transition-all cursor-pointer">
+                            <button
+                              key={item.id}
+                              onClick={() => openHistoryEntry(item.id)}
+                              className="w-full p-4 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center justify-between group hover:border-accent transition-all cursor-pointer text-left"
+                            >
                               <div className="flex items-center gap-4">
                                 <div className={cn(
                                   "w-10 h-10 rounded-xl flex items-center justify-center",
@@ -719,12 +798,32 @@ export function AnalysisPage() {
                                   <Play className="w-5 h-5" />
                                 </div>
                                 <div>
-                                  <p className="text-sm font-bold text-primary dark:text-white">{item.summary}</p>
-                                  <p className="text-[10px] text-slate-500 font-medium uppercase tracking-widest">{item.date} • {item.strain} Strain Detected</p>
+                                  <p className="text-sm font-black text-primary dark:text-white">{item.title}</p>
+                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-bold leading-snug mt-0.5">
+                                    {item.summary}
+                                  </p>
+                                  <p className="text-[10px] text-slate-500 font-medium uppercase tracking-widest">
+                                    {new Date(item.createdAt).toISOString().split('T')[0]} • {item.strain} Risk Detected
+                                  </p>
                                 </div>
                               </div>
-                              <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-accent transition-all" />
-                            </div>
+                              <div className="flex items-center gap-3">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    deleteHistoryEntry(item.id);
+                                  }}
+                                  className="p-2 rounded-xl bg-white/60 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 text-slate-500 hover:text-status-red hover:border-status-red/50 hover:bg-status-red/10 transition-all"
+                                  aria-label="Delete analysis"
+                                  title="Delete analysis"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                                <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-accent transition-all" />
+                              </div>
+                            </button>
                           ))}
                         </div>
                       ) : (
@@ -868,7 +967,7 @@ export function AnalysisPage() {
                         {!isCvAnalyzing && !cvResults && (
                           <div className="absolute inset-0 flex items-center justify-center">
                             <button 
-                              onClick={handleCvAnalyze}
+                              onClick={startCvAnalyzeFlow}
                               className="w-16 h-16 bg-accent text-primary rounded-full flex items-center justify-center hover:scale-110 transition-all shadow-xl"
                             >
                               <Play className="w-8 h-8 fill-current ml-1" />
@@ -876,6 +975,75 @@ export function AnalysisPage() {
                           </div>
                         )}
                       </div>
+
+                      <AnimatePresence>
+                        {cvNameOpen && (
+                          <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-50 flex items-start justify-center pt-24 px-4 bg-black/40 backdrop-blur-[2px]"
+                          >
+                            <motion.div
+                              initial={{ y: 12, opacity: 0, scale: 0.98 }}
+                              animate={{ y: 0, opacity: 1, scale: 1 }}
+                              exit={{ y: 12, opacity: 0, scale: 0.98 }}
+                              transition={{ duration: 0.18, ease: 'easeOut' }}
+                              className="w-full max-w-md bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden"
+                            >
+                              <div className="p-6 space-y-4">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div>
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">CV Breakdown</p>
+                                    <h4 className="text-lg font-black text-primary dark:text-white uppercase tracking-tight">Name this analysis</h4>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setCvNameOpen(false)}
+                                    className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+                                  >
+                                    Close
+                                  </button>
+                                </div>
+
+                                <div className="space-y-2">
+                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Video name</label>
+                                  <input
+                                    value={cvPendingName}
+                                    onChange={(e) => setCvPendingName(e.target.value)}
+                                    placeholder="e.g. Marcus – Zig Zag Dribble"
+                                    className="w-full px-4 py-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-primary dark:text-white font-bold outline-none focus:ring-2 focus:ring-accent transition-all"
+                                  />
+                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium leading-snug">
+                                    This name will show in the player’s CV history so coaches can revisit analyses later.
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="p-6 pt-0 flex items-center gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => setCvNameOpen(false)}
+                                  className="flex-1 py-3 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-300 font-black text-[10px] uppercase tracking-widest hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const title = (cvPendingName || '').trim() || (cvFile?.name?.replace(/\.[^/.]+$/, '') ?? 'CV Analysis');
+                                    setCvNameOpen(false);
+                                    await handleCvAnalyze(title);
+                                  }}
+                                  className="flex-1 py-3 rounded-2xl bg-accent text-primary font-black text-[10px] uppercase tracking-widest hover:scale-[1.01] active:scale-95 transition-all"
+                                >
+                                  Start analysis
+                                </button>
+                              </div>
+                            </motion.div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
 
                       {cvResults ? (
                         <motion.div 
@@ -913,7 +1081,7 @@ export function AnalysisPage() {
                       ) : (
                         <div className="flex gap-4">
                           <button 
-                            onClick={handleCvAnalyze}
+                            onClick={startCvAnalyzeFlow}
                             disabled={isCvAnalyzing}
                             className="flex-1 py-4 bg-accent text-primary font-black rounded-2xl shadow-lg hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-widest text-xs"
                           >
